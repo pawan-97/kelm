@@ -6,7 +6,7 @@
 
 global:
   repoURL: "git@github.com:pawan-97/kelm.git"
-  targetRevision: HEAD
+  targetRevision: master
   server: "https://kubernetes.default.svc"
   syncPolicy:
     automated:
