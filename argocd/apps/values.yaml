@@ -1,0 +1,41 @@
+# ============================================================
+# Root App-of-Apps Values
+# Add new applications to the `applications` list below.
+# ArgoCD will create an Application CR for each enabled entry.
+# ============================================================
+
+global:
+  repoURL: "git@github.com:pawan-97/kelm.git"
+  targetRevision: HEAD
+  server: "https://kubernetes.default.svc"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+
+# ============================================================
+# Applications — add entries here to deploy new workloads
+# ============================================================
+applications:
+  - name: kube-prometheus-stack
+    enabled: true
+    project: monitoring
+    namespace: monitoring
+    # Single flat path — no overlays
+    path: apps/kube-prometheus-stack
+
+  # ── Add future applications below ──────────────────────────
+  # - name: my-app
+  #   enabled: true
+  #   project: default-apps
+  #   namespace: my-namespace
+  #   path: apps/my-app
+
+# ============================================================
+# ApplicationSets rendered via Helm template
+# (Standalone ApplicationSets live in argocd/applicationsets/)
+# ============================================================
+applicationSets: []

@@ -1,0 +1,61 @@
+# ============================================================
+# ApplicationSet: Git Directory Generator
+# Automatically creates an ArgoCD Application for every
+# subdirectory found under clusters/<env>/
+#
+# Usage: Add a new folder to clusters/prod/<app-name>/ with 
+# a kustomization.yaml and ArgoCD will pick it up automatically.
+# ============================================================
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: cluster-addons-prod
+  namespace: argocd
+spec:
+  # Strategy: process all generators before creating apps (safer)
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+
+  generators:
+    - git:
+        repoURL: "git@github.com:pawan-97/kelm.git"
+        revision: HEAD
+        directories:
+          - path: "clusters/prod/*"
+          # Exclude the _template directory
+          - path: "clusters/prod/_template"
+            exclude: true
+
+  template:
+    metadata:
+      name: "{{ .path.basename }}"
+      namespace: argocd
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+      annotations:
+        # Auto-generated — do not edit manually
+        notifications.argoproj.io/subscribe.on-sync-succeeded.slack: "argocd-notifications"
+    spec:
+      project: default-apps
+
+      source:
+        repoURL: "git@github.com:pawan-97/kelm.git"
+        targetRevision: HEAD
+        path: "{{ .path.path }}"
+
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{ .path.basename }}"
+
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+
+  # Template sync policy
+  syncPolicy:
+    # Preserve live app resources when ApplicationSet is deleted
+    preserveResourcesOnDeletion: true

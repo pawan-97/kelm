@@ -1,0 +1,39 @@
+# =============================================================
+# Root Application - Bootstrap ArgoCD App-of-Apps
+# Apply this ONCE manually to bootstrap the entire GitOps flow:
+#   kubectl apply -f argocd/apps/root-app.yaml
+# After this, ArgoCD manages everything else automatically.
+# =============================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root-apps
+  namespace: argocd
+  # Ensure ArgoCD cleans up child resources when this is deleted
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/name: root-apps
+    app.kubernetes.io/component: bootstrap
+spec:
+  project: default
+
+  source:
+    repoURL: "git@github.com:pawan-97/kelm.git"
+    targetRevision: HEAD
+    path: argocd/apps
+    helm:
+      valueFiles:
+        - values.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

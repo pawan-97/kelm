@@ -1,0 +1,57 @@
+# ============================================================
+# ApplicationSet: Multi-Cluster Generator
+# Generates Applications across multiple clusters using a list
+# of clusters. Useful when you have dev/staging/prod clusters.
+#
+# Each cluster gets the same set of base apps deployed.
+# ============================================================
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: multi-cluster-monitoring
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+
+  generators:
+    - list:
+        elements:
+          - clusterName: in-cluster
+            server: https://kubernetes.default.svc
+            env: prod
+            storageClass: gp3
+          # Add more clusters below:
+          # - clusterName: dev-cluster
+          #   server: https://dev-cluster.example.com
+          #   env: dev
+          #   storageClass: standard
+
+  template:
+    metadata:
+      name: "kube-prometheus-stack-{{ .clusterName }}"
+      namespace: argocd
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: monitoring
+
+      source:
+        repoURL: "git@github.com:pawan-97/kelm.git
+        targetRevision: HEAD
+        path: "apps/kube-prometheus-stack/overlays/{{ .env }}"
+
+      destination:
+        server: "{{ .server }}"
+        namespace: monitoring
+
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+
+  syncPolicy:
+    preserveResourcesOnDeletion: true

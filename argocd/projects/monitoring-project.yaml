@@ -1,0 +1,56 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: monitoring
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: "Monitoring stack - Prometheus, Grafana, Alertmanager"
+
+  # Source repositories allowed for this project
+  sourceRepos:
+    - "git@github.com:pawan-97/kelm.git"
+    - "https://prometheus-community.github.io/helm-charts"
+
+  # Destination clusters/namespaces allowed
+  destinations:
+    - namespace: monitoring
+      server: https://kubernetes.default.svc
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+
+  # Cluster resource access (cluster-scoped)
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: "rbac.authorization.k8s.io"
+      kind: ClusterRole
+    - group: "rbac.authorization.k8s.io"
+      kind: ClusterRoleBinding
+    - group: "apiextensions.k8s.io"
+      kind: CustomResourceDefinition
+    - group: "admissionregistration.k8s.io"
+      kind: MutatingWebhookConfiguration
+    - group: "admissionregistration.k8s.io"
+      kind: ValidatingWebhookConfiguration
+
+  # Namespaced resource access
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
+  # Sync windows (optional - restrict when syncs can happen)
+  # syncWindows:
+  #   - kind: allow
+  #     schedule: "0 8 * * 1-5"
+  #     duration: 8h
+  #     applications: ["*"]
+
+  roles:
+    - name: monitoring-admin
+      description: Admin access to monitoring project
+      policies:
+        - p, proj:monitoring:monitoring-admin, applications, *, monitoring/*, allow
+      groups:
+        - monitoring-team  # Map to your SSO group

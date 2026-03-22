@@ -1,0 +1,9 @@
+apiVersion: v2
+name: root-apps
+description: |
+  Root App-of-Apps Helm Chart.
+  This chart renders all ArgoCD Application and ApplicationSet resources
+  that ArgoCD will then manage (sync) independently.
+type: application
+version: 0.1.0
+appVersion: "1.0"

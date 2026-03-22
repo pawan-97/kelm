@@ -1,0 +1,21 @@
+# ============================================================
+# Cluster-specific kustomization template
+# Copy this directory and rename it: clusters/prod/<app-name>/
+# The ApplicationSet will auto-detect it and create an Application.
+# ============================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: replace-with-your-namespace
+
+# Point to your app's overlay or a standalone set of manifests
+resources:
+  - ../../../apps/replace-with-your-app/overlays/prod
+
+# Optional: environment-specific patches
+# patches:
+#   - path: patch-replicas.yaml
+
+commonLabels:
+  managed-by: argocd
+  cluster: prod

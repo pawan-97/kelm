@@ -1,0 +1,28 @@
+{{- range .Values.applications }}
+{{- if .enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .name }}
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/managed-by: argocd-root-apps
+spec:
+  project: {{ .project | default "default-apps" }}
+
+  source:
+    repoURL: {{ .repoURL | default $.Values.global.repoURL }}
+    targetRevision: {{ .targetRevision | default $.Values.global.targetRevision }}
+    path: {{ .path }}
+
+  destination:
+    server: {{ .server | default $.Values.global.server }}
+    namespace: {{ .namespace }}
+
+  syncPolicy:
+    {{- toYaml ((.syncPolicy) | default $.Values.global.syncPolicy) | nindent 4 }}
+{{- end }}
+{{- end }}
