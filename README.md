@@ -1,65 +1,100 @@
-# ArgoCD GitOps Repository — kelm
+# kelm — Kubernetes Deployment Platform
 
-Manages Kubernetes applications using **ArgoCD**, **Helm**, and **Kustomize**
-following the **App-of-Apps** pattern.
+GitOps platform powered by **ArgoCD**, **Helm**, and **Kustomize**.
+
+- **Infra apps** (prometheus, etc.) are deployed directly via Helm + Kustomize.
+- **Developer apps** plug in via a reusable GitHub Actions workflow. CI builds the Docker image, pushes to DockerHub, updates this repo, and ArgoCD auto-deploys.
+
+## How it works
+
+```
+Developer's Repo                         kelm (this repo)
+┌────────────────────┐                   ┌───────────────────────────────────┐
+│ App code           │  git push main    │                                   │
+│ Dockerfile         │ ─────────────►    │ .github/workflows/reusable-deploy │
+│ .github/workflows/ │                   │   ├─ semantic-release  (version)  │
+│   deploy.yaml ─────┤ calls reusable ──►│   ├─ docker build+push (DockerHub)│
+│ .releaserc.json    │   workflow        │   └─ update apps/<name>/values    │
+└────────────────────┘                   │                                   │
+                                         │ charts/generic-app/   ← reusable │
+                                         │ apps/<name>/values.yaml  ← config│
+                                         │ argocd/ ← App-of-Apps            │
+                                         └────────────┬────────────────────┘
+                                                       │ git change detected
+                                                       ▼
+                                                  ┌──────────┐
+                                                  │  ArgoCD  │
+                                                  │  (syncs) │
+                                                  └──────────┘
+```
 
 ## Repository Structure
 
 ```
 kelm/
+├── charts/
+│   └── generic-app/              # Reusable Helm chart (Deployment, Service, etc.)
+├── apps/
+│   ├── kube-prometheus-stack/    # Infra: monitoring (single deployment)
+│   └── <app-name>/              # Created by CI for each developer app
 ├── argocd/
-│   ├── projects/                        # AppProject RBAC boundaries
-│   ├── apps/                            # Root App-of-Apps Helm chart
-│   │   ├── root-app.yaml                # ★ Bootstrap once (kubectl apply)
-│   │   ├── Chart.yaml
-│   │   ├── values.yaml                  # Register applications here
-│   │   └── templates/
-│   │       ├── applications.yaml        # Renders Application CRs
-│   │       └── applicationsets.yaml     # Renders ApplicationSet CRs
-│   └── applicationsets/                 # Standalone ApplicationSets
-│       ├── cluster-addons-appset.yaml   # Auto-discovers apps in clusters/prod/
-│       └── multi-cluster-monitoring-appset.yaml
-│
-├── apps/                                # Application manifests
-│   └── kube-prometheus-stack/           # Prometheus + Grafana + Alertmanager
-│       ├── kustomization.yaml           # Single deployment, all namespaces
-│       └── values.yaml                  # Helm values
-│
-└── clusters/
-    └── prod/
-        └── monitoring/                  # Picked up by cluster-addons-appset
+│   ├── apps/                    # Root App-of-Apps (Helm chart)
+│   ├── applicationsets/         # Auto-discovery ApplicationSets
+│   └── projects/                # RBAC boundaries
+├── clusters/                    # Cluster-specific linkages
+├── examples/
+│   └── developer-app/           # Copy this into your app repo
+└── .github/
+    └── workflows/
+        └── reusable-deploy.yaml # Called by developer repos
 ```
 
-## Bootstrap
+## For Developers — Deploying Your App
+
+### 1. Add 3 files to your repo
+
+```
+your-repo/
+├── Dockerfile
+├── .releaserc.json              ← copy from examples/developer-app/
+└── .github/workflows/
+    └── deploy.yaml              ← copy from examples/developer-app/
+```
+
+### 2. Set GitHub Secrets
+
+| Secret | Value |
+|--------|-------|
+| `DOCKERHUB_USERNAME` | Your DockerHub username |
+| `DOCKERHUB_TOKEN` | DockerHub access token |
+| `KELM_DEPLOY_KEY` | SSH key with write access to kelm |
+
+### 3. Push to main
+
+```bash
+git add . && git commit -m "feat: initial release" && git push
+```
+
+CI handles everything: versioning → Docker build → ArgoCD deploy.
+
+## For Platform Admins — Bootstrap
 
 ```bash
 # 1. Install ArgoCD
 kubectl create namespace argocd
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
-# 2. Add this repo to ArgoCD (SSH key required — see repo setup guide)
+# 2. Register kelm repo in ArgoCD
 argocd repo add git@github.com:pawan-97/kelm.git --ssh-private-key-path ~/.ssh/id_rsa
 
-# 3. Apply the root App-of-Apps (one time only)
+# 3. Apply projects and bootstrap
+kubectl apply -f argocd/projects/
 kubectl apply -f argocd/apps/root-app.yaml
-# ArgoCD auto-creates all registered Applications from values.yaml
 ```
-
-## Adding a New Application
-
-1. Create `apps/<app-name>/kustomization.yaml` (+ any supporting files)
-2. Add an entry to `argocd/apps/values.yaml` under `applications:`
-3. Commit and push — ArgoCD syncs automatically
 
 ## Applications
 
-| App | Namespace | Chart Version |
-|-----|-----------|---------------|
-| kube-prometheus-stack | monitoring | 68.3.2 |
-
-## Grafana Access (port-forward)
-
-```bash
-kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n monitoring
-# http://localhost:3000
-```
+| App | Type | Namespace |
+|-----|------|-----------|
+| kube-prometheus-stack | Infra (Helm) | monitoring |
+| _your-app_ | Developer | _auto-created_ |

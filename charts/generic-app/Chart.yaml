@@ -1,0 +1,16 @@
+apiVersion: v2
+name: generic-app
+description: |
+  Reusable Helm chart for deploying any containerized application.
+  Developers depend on this chart from their own repos —
+  just provide a values.yaml and your app gets Deployment, Service,
+  Ingress, HPA, ConfigMap, ServiceAccount, etc.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - generic
+  - app
+  - deployment
+maintainers:
+  - name: pawan-97

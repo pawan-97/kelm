@@ -1,6 +1,8 @@
 # Helm build artifacts
 *.tgz
-charts/
+Chart.lock
+# Ignore downloaded dependency charts inside any chart, not our top-level charts/
+**/charts/generic-app/charts/
 
 # Kustomize build output
 build/

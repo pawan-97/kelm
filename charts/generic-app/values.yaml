@@ -1,0 +1,167 @@
+# ============================================================
+# generic-app — Default Values
+# Developers override these in their app-specific values.yaml.
+# Only `image.repository` and `image.tag` are required overrides.
+# ============================================================
+
+# ----- App metadata -----
+nameOverride: ""
+fullnameOverride: ""
+
+# ----- Container image -----
+image:
+  repository: ""       # REQUIRED — e.g. "docker.io/myorg/myapp"
+  tag: "latest"        # REQUIRED — set by CI via semantic-release
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+# - name: dockerhub-credentials
+
+# ----- Replicas / Scaling -----
+replicaCount: 1
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# ----- Container settings -----
+containerPort: 8080
+
+command: []
+args: []
+
+# ----- Environment variables -----
+env: []
+#  - name: DATABASE_URL
+#    value: "postgres://..."
+
+envFrom: []
+#  - configMapRef:
+#      name: my-config
+#  - secretRef:
+#      name: my-secret
+
+# ----- Probes -----
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /ready
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+startupProbe:
+  enabled: false
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  failureThreshold: 30
+
+# ----- Resources -----
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# ----- Service -----
+service:
+  enabled: true
+  type: ClusterIP
+  port: 80
+  targetPort: http    # references containerPort name
+  annotations: {}
+
+# ----- Ingress -----
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # cert-manager.io/cluster-issuer: letsencrypt-prod
+  # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts: []
+  #  - host: my-app.example.com
+  #    paths:
+  #      - path: /
+  #        pathType: Prefix
+  tls: []
+  #  - secretName: my-app-tls
+  #    hosts:
+  #      - my-app.example.com
+
+# ----- ServiceAccount -----
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# ----- ConfigMap (optional inline config) -----
+configMap:
+  enabled: false
+  data: {}
+  # APP_CONFIG: |
+  #   key=value
+
+# ----- Secrets (optional inline — prefer ExternalSecret in prod) -----
+secret:
+  enabled: false
+  data: {}
+  # API_KEY: base64-encoded-value
+
+# ----- Volumes -----
+volumes: []
+volumeMounts: []
+
+# ----- Persistence (PVC) -----
+persistence:
+  enabled: false
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 1Gi
+  mountPath: /data
+
+# ----- Node scheduling -----
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+
+# ----- Pod settings -----
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+
+# ----- ServiceMonitor (for Prometheus) -----
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  path: /metrics
+  port: http
+  labels: {}
+
+# ----- Init containers (optional) -----
+initContainers: []
+
+# ----- Sidecar containers (optional) -----
+sidecarContainers: []

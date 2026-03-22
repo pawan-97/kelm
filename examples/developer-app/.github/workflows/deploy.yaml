@@ -1,0 +1,40 @@
+# ============================================================
+# Developer's deploy.yaml — put this in YOUR app repo at:
+#   .github/workflows/deploy.yaml
+#
+# This calls the reusable workflow in kelm.
+# ============================================================
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write  # needed for semantic-release to create tags
+
+jobs:
+  deploy:
+    # Only deploy on push to main (not on PRs)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: pawan-97/kelm/.github/workflows/reusable-deploy.yaml@master
+    with:
+      app_name: my-app           # ← Change to your app name
+      container_port: 8080       # ← Change to your app's port
+      namespace: my-app          # ← (optional) defaults to app_name
+      # values_file: helm/values.yaml  # ← (optional) extra Helm overrides
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      KELM_DEPLOY_KEY: ${{ secrets.KELM_DEPLOY_KEY }}
+
+  # Optional: run tests on PRs
+  test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        run: echo "Add your test commands here"

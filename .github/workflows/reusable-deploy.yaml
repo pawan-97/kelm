@@ -1,0 +1,268 @@
+# ============================================================
+# Reusable Workflow: Build, Release, Deploy
+#
+# Developer repos call this workflow. It:
+#   1. Runs semantic-release to determine the version
+#   2. Builds Docker image → pushes to DockerHub
+#   3. Registers/updates the app in THIS kelm repo
+#   4. ArgoCD auto-syncs the rest
+#
+# Usage in developer's repo:
+#   See examples/developer-app/.github/workflows/deploy.yaml
+# ============================================================
+name: Build and Deploy App
+
+on:
+  workflow_call:
+    inputs:
+      app_name:
+        description: "Application name (used for namespace, image name, app folder)"
+        required: true
+        type: string
+      dockerfile_path:
+        description: "Path to Dockerfile"
+        required: false
+        type: string
+        default: "./Dockerfile"
+      docker_context:
+        description: "Docker build context"
+        required: false
+        type: string
+        default: "."
+      namespace:
+        description: "Kubernetes namespace to deploy to"
+        required: false
+        type: string
+        default: ""  # defaults to app_name
+      container_port:
+        description: "Container port the app listens on"
+        required: false
+        type: number
+        default: 8080
+      chart_version:
+        description: "Version of generic-app chart to use"
+        required: false
+        type: string
+        default: "0.1.0"
+      values_file:
+        description: "Path to extra values file in the caller repo (optional)"
+        required: false
+        type: string
+        default: ""
+
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: true
+      DOCKERHUB_TOKEN:
+        required: true
+      KELM_DEPLOY_KEY:
+        description: "SSH deploy key with write access to pawan-97/kelm"
+        required: true
+
+jobs:
+  release:
+    name: Semantic Release
+    runs-on: ubuntu-latest
+    outputs:
+      new_release: ${{ steps.release.outputs.new_release_published }}
+      version: ${{ steps.release.outputs.new_release_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history for semantic-release
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install semantic-release
+        run: npm install -g semantic-release @semantic-release/changelog @semantic-release/git
+
+      - name: Run semantic-release (dry-run to get version)
+        id: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx semantic-release --dry-run 2>&1 | tee release.log
+          # Parse the version
+          VERSION=$(grep -oP 'The next release version is \K[0-9]+\.[0-9]+\.[0-9]+' release.log || echo "")
+          if [ -n "$VERSION" ]; then
+            echo "new_release_published=true" >> $GITHUB_OUTPUT
+            echo "new_release_version=$VERSION" >> $GITHUB_OUTPUT
+            echo "🎉 New version: $VERSION"
+          else
+            echo "new_release_published=false" >> $GITHUB_OUTPUT
+            echo "new_release_version=" >> $GITHUB_OUTPUT
+            echo "ℹ️ No new release needed"
+          fi
+
+      - name: Create release
+        if: steps.release.outputs.new_release_published == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
+
+  build-and-push:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: release
+    if: needs.release.outputs.new_release == 'true'
+    outputs:
+      image_tag: ${{ needs.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.docker_context }}
+          file: ${{ inputs.dockerfile_path }}
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ inputs.app_name }}:${{ needs.release.outputs.version }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ inputs.app_name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-to-kelm:
+    name: Update kelm Repo
+    runs-on: ubuntu-latest
+    needs: [release, build-and-push]
+    if: needs.release.outputs.new_release == 'true'
+    steps:
+      - name: Set namespace
+        id: vars
+        run: |
+          NS="${{ inputs.namespace }}"
+          echo "namespace=${NS:-${{ inputs.app_name }}}" >> $GITHUB_OUTPUT
+
+      - name: Checkout kelm repo
+        uses: actions/checkout@v4
+        with:
+          repository: pawan-97/kelm
+          ssh-key: ${{ secrets.KELM_DEPLOY_KEY }}
+          path: kelm
+
+      - name: Create / update app in kelm
+        run: |
+          APP_DIR="kelm/apps/${{ inputs.app_name }}"
+          mkdir -p "$APP_DIR"
+
+          # ── values.yaml ──
+          cat > "$APP_DIR/values.yaml" <<'ENDVALUES'
+          # Auto-generated by CI — do not edit manually
+          # App: ${{ inputs.app_name }}
+          # Updated: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          image:
+            repository: ${{ secrets.DOCKERHUB_USERNAME }}/${{ inputs.app_name }}
+            tag: "${{ needs.release.outputs.version }}"
+            pullPolicy: IfNotPresent
+
+          containerPort: ${{ inputs.container_port }}
+
+          replicaCount: 1
+
+          service:
+            enabled: true
+            type: ClusterIP
+            port: 80
+            targetPort: http
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+
+          livenessProbe:
+            enabled: true
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            enabled: true
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          serviceMonitor:
+            enabled: true
+            interval: 30s
+            path: /metrics
+            port: http
+          ENDVALUES
+
+          # ── kustomization.yaml ──
+          cat > "$APP_DIR/kustomization.yaml" <<EOF
+          apiVersion: kustomize.config.k8s.io/v1beta1
+          kind: Kustomization
+          namespace: ${{ steps.vars.outputs.namespace }}
+          helmCharts:
+            - name: generic-app
+              repo: file://../../charts/generic-app
+              version: ${{ inputs.chart_version }}
+              releaseName: ${{ inputs.app_name }}
+              namespace: ${{ steps.vars.outputs.namespace }}
+              valuesFile: values.yaml
+          commonLabels:
+            app.kubernetes.io/managed-by: argocd
+          EOF
+
+          # If caller has an extra values file, copy it in
+          if [ -n "${{ inputs.values_file }}" ] && [ -f "../${{ inputs.values_file }}" ]; then
+            cp "../${{ inputs.values_file }}" "$APP_DIR/values-custom.yaml"
+          fi
+
+      - name: Register app in ArgoCD values.yaml (if not already)
+        run: |
+          VALUES_FILE="kelm/argocd/apps/values.yaml"
+          APP_NAME="${{ inputs.app_name }}"
+          NAMESPACE="${{ steps.vars.outputs.namespace }}"
+
+          # Check if app already registered
+          if grep -q "name: ${APP_NAME}" "$VALUES_FILE"; then
+            echo "✅ App '${APP_NAME}' already registered in values.yaml"
+          else
+            echo "📝 Registering '${APP_NAME}' in values.yaml"
+            # Append before the last line of the applications block
+            cat >> "$VALUES_FILE" <<EOF
+
+  - name: ${APP_NAME}
+    enabled: true
+    project: default-apps
+    namespace: ${NAMESPACE}
+    path: apps/${APP_NAME}
+EOF
+            echo "✅ App registered"
+          fi
+
+      - name: Commit and push
+        run: |
+          cd kelm
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --staged --quiet && echo "No changes" && exit 0
+          git commit -m "deploy: ${{ inputs.app_name }}@${{ needs.release.outputs.version }}"
+          git push
